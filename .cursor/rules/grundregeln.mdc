@@ -1,0 +1,9 @@
+---
+description: Grundregeln für die Arbeit in diesem Projekt
+alwaysApply: true
+---
+
+# Grundregeln
+
+- Niemals Ruby verwenden.
+- Nie Tutorialcode heranziehen.
