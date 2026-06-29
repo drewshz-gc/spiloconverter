@@ -1,0 +1,72 @@
+# CNPG Monolith-Cluster für Condor (Migration von Spilo condor02-postgres-cluster)
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: condor02-postgres-cluster
+  namespace: condor-prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    app.kubernetes.io/managed-by: spilo2cnpg
+    spilo2cnpg/source-cluster: condor02-postgres-cluster
+    tenant: condor
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:15
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover
+  storage:
+    size: 1400Gi
+    storageClass: partition-gold-encrypted
+  resources:
+    requests:
+      cpu: 7000m
+      memory: 16Gi
+    limits:
+      cpu: 10000m
+      memory: 16Gi
+  bootstrap:
+    initdb:
+      database: condormabasprod
+      owner: condor
+      secret:
+        name: condor02-postgres-cluster-app
+  backup:
+    target: prefer-standby
+    retentionPolicy: 30d
+    barmanObjectStore:
+      destinationPath: s3://REPLACE_ME_WAL_S3_BUCKET/spilo/condor02-postgres-cluster
+      serverName: condor02-postgres-cluster
+      s3Credentials:
+        accessKeyId:
+          name: gc-wal-encryption-settings-condor02-postgres-cluster
+          key: AWS_ACCESS_KEY_ID
+        secretAccessKey:
+          name: gc-wal-encryption-settings-condor02-postgres-cluster
+          key: AWS_SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+  postgresql:
+    parameters:
+      max_connections: "150"
+      enable_indexscan: "on"
+      shared_buffers: "4GB"
+      effective_cache_size: "12GB"
+      work_mem: "24MB"
+      hot_standby_feedback: "on"
+      autovacuum: "on"
+  enableSuperuserAccess: true
+  monitoring:
+    enablePodMonitor: false
+  managed:
+    roles:
+      - name: condor
+        login: true
+        superuser: true
+        createdb: true
+        inherit: true
+        passwordSecret:
+          name: condor.credentials.postgresql.acid.zalan.do
+          key: password

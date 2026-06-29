@@ -1,0 +1,198 @@
+= Diskrepanzen Zalando/Spilo -> CloudNativePG (aus Deployment-Test)
+:toc:
+:toclevels: 3
+
+Stand: 2026-06-17 +
+Quelle: Deployment-/Import-Test des Pilot-Clusters `tifa01-cnpg-cluster` +
+Umgebung: Kontext `i1-stg`, Namespace `mf-selfservice-test`, Tenant `tifa` +
+Strategie: CNPG `bootstrap.initdb.import` (logischer Import via `pg_dump`/`pg_restore`)
+
+== Zusammenfassung
+
+Der logische Import einer Spilo-Datenbank (u.a. `keycloak`) in einen frisch
+provisionierten CNPG-Cluster *schlaegt fehl*, weil mehrere von Zalando/Spilo
+mitgelieferte PostgreSQL-Extensions im Standard-CNPG-Image
+(`ghcr.io/cloudnative-pg/postgresql`) *nicht vorhanden* sind. `pg_restore`
+bricht in der `pre-data`-Phase mit `exit status 1` ab und damit das gesamte
+Bootstrapping des Data-Directory.
+
+Beobachtetes Endergebnis:
+
+----
+Error: while executing logical import: error while executing pg_restore,
+section:pre-data, exit status 1
+----
+
+== Diskrepanz 1: Fehlende PostgreSQL-Extensions (Blocker)
+
+=== Befund
+
+Die Spilo-Quell-Cluster setzen in `preparedDatabases` / `postgresql.parameters`
+folgende `shared_preload_libraries` (Beispiel `bauking01` / `ernstings01`):
+
+----
+bg_mon, pg_stat_statements, pgextwlist, pg_auth_mon, set_user,
+timescaledb, pg_cron, pg_stat_kcache, auto_explain, pg_mon
+----
+
+Diese Extensions sind im *Zalando Spilo-Image gebuendelt*, fehlen aber im
+*Standard-CNPG-Image*. Beim logischen Import erzeugt der Dump
+`CREATE EXTENSION`-Anweisungen, die fehlschlagen.
+
+=== Evidenz (Import-Pod `tifa01-cnpg-cluster-1-import`)
+
+----
+ERROR: extension "pg_stat_kcache" is not available
+  query: CREATE EXTENSION IF NOT EXISTS pg_stat_kcache WITH SCHEMA public;
+ERROR: extension "pg_stat_kcache" does not exist
+  query: COMMENT ON EXTENSION pg_stat_kcache ...
+ERROR: extension "set_user" is not available
+  query: CREATE EXTENSION IF NOT EXISTS set_user WITH SCHEMA public;
+ERROR: extension "set_user" does not exist
+  query: COMMENT ON EXTENSION set_user ...
+
+pg_restore: warning: errors ignored on restore: 4
+HINT: The extension must first be installed on the system where PostgreSQL is running.
+----
+
+NOTE: Obwohl `pg_restore` die Fehler als "ignored" meldet
+(`errors ignored on restore: 4`), wertet der CNPG-Instance-Manager den
+`exit status 1` der `pre-data`-Phase als *fatal* und bricht das Bootstrapping ab.
+Das ist ein zentraler Verhaltensunterschied: Auf Spilo existierten die
+Extensions, daher trat das Problem dort nie auf.
+
+=== Klassifizierung der Extensions
+
+[cols="2,1,3"]
+|===
+| Extension | In CNPG-Standardimage? | Anmerkung
+
+| pg_stat_statements | ja (contrib) | unkritisch
+| auto_explain        | ja (contrib, Modul) | unkritisch
+| set_user            | nein | Spilo-spezifisch -> Image/Build noetig
+| pg_stat_kcache      | nein | Spilo-spezifisch -> Image/Build noetig
+| bg_mon              | nein | Spilo-Monitoring
+| pg_auth_mon         | nein | Spilo-Monitoring
+| pg_mon              | nein | Spilo-Monitoring
+| pgextwlist          | nein | Extension-Whitelisting (Spilo)
+| pg_cron             | nein | separat zu installieren/konfigurieren
+| timescaledb         | nein | separate Extension/Image-Variante
+|===
+
+=== Auswirkung
+
+* Logischer Import (`initdb.import`, entspricht INITDB-Strategie) *bricht ab*.
+* Betrifft potenziell *alle* Cluster mit diesen `shared_preload_libraries`.
+
+=== Empfohlene Massnahmen
+
+. *Custom CNPG-Image* bauen, das die benoetigten Extensions enthaelt
+  (`set_user`, `pg_stat_kcache`, `bg_mon`, `pg_auth_mon`, `pg_mon`,
+  `pgextwlist`, `pg_cron`, ggf. `timescaledb`), und in `spec.imageName`
+  referenzieren; ODER
+. *Extensions vor dem Import bereinigen* (Dump ohne diese `CREATE EXTENSION`/
+  `COMMENT ON EXTENSION` bzw. `shared_preload_libraries` reduzieren), wenn sie
+  fachlich nicht benoetigt werden; ODER
+. Kombination: nur fachlich notwendige Extensions ins Image, Monitoring-
+  Extensions (bg_mon/pg_mon/pg_auth_mon) weglassen.
+. Analyzer/Konverter erweitern: `shared_preload_libraries` parsen und
+  nicht-CNPG-Extensions als *BLOCKER* melden (Kategorie EXTENSIONS).
+
+== Diskrepanz 2: Connection Pooler (PgBouncer)
+
+=== Befund
+
+CNPG legt fuer den Cluster separate Pooler-Pods an, die im Test in `Error`/
+CrashLoop liefen:
+
+----
+tifa01-cnpg-cluster-pooler-ro-...   0/1   Error   1
+tifa01-cnpg-cluster-pooler-rw-...   0/1   Error   1
+----
+
+In Zalando/Spilo ist der Connection Pooler ueber `enableConnectionPooler`
+in den Operator integriert; in CNPG ist er eine eigenstaendige `Pooler`-
+Ressource mit eigener Konfiguration/Abhaengigkeiten (hier noch fehlerhaft).
+
+=== Auswirkung / Massnahme
+
+* Pooler-Konfiguration fuer CNPG separat verifizieren (Auth-Secret, Service,
+  Ressourcen) bevor Apps darauf verbunden werden.
+* Im Migrationsplan als eigener Schritt einplanen (nicht "Pooler kommt
+  automatisch mit").
+
+== Diskrepanz 3: Namensschema
+
+Der Testlauf verwendet das CNPG-spezifische Schema
+`<tenant><nn>-cnpg-cluster` (z.B. `tifa01-cnpg-cluster`), waehrend Konverter
+und Condor-Beispiele aktuell den *unveraenderten Spilo-Namen*
+(`<...>-postgres-cluster`) behalten.
+
+Abgeleitete Namen im Test:
+
+[cols="1,2"]
+|===
+| Objekt | Name
+
+| Cluster        | `tifa01-cnpg-cluster`
+| Instanz-Pod    | `tifa01-cnpg-cluster-1`
+| Import-Pod     | `tifa01-cnpg-cluster-1-import-<rand>`
+| Pooler (rw/ro) | `tifa01-cnpg-cluster-pooler-rw` / `-pooler-ro`
+|===
+
+Konsequenz: Das Namensschema muss verbindlich auf `-cnpg-cluster` festgelegt
+und im Konverter/in den Beispielen entsprechend umgestellt werden
+(siehe CCPSQL-130). Alle abgeleiteten Namen (Secrets, ScheduledBackup,
+Logical-CronJob, Barman `serverName`/S3-Pfad, External-Cluster) folgen daraus.
+
+== Diskrepanz 4: NetworkPolicies (vorlaeufig 1:1 uebernommen)
+
+=== Befund
+
+Die NetworkPolicies wurden zunaechst *eins zu eins* aus dem Spilo-/Zalando-Setup
+uebernommen (Zwischenstand, noch nicht an CNPG angepasst).
+
+=== Risiko / Diskrepanz
+
+Spilo- und CNPG-Pods tragen *unterschiedliche Labels*. Eine 1:1 kopierte
+NetworkPolicy selektiert daher u.U. die CNPG-Pods *nicht* und laesst gewollten
+Traffic faelschlich zu oder blockiert ihn:
+
+[cols="1,2,2"]
+|===
+| | Spilo/Zalando | CNPG
+
+| Pod-Selektor (Beispiel) | `application: spilo`, `cluster-name: <name>` | `cnpg.io/cluster: <name>`
+| Rollen-Label            | `spilo-role: master/replica`                | `cnpg.io/instanceRole: primary/replica`
+| Zusatz-Pods             | (Pooler im Operator)                        | eigene Pods: `*-pooler-rw/-ro`, Import-/Backup-Jobs
+|===
+
+Folgen bei unveraenderter 1:1-Uebernahme:
+
+* `podSelector` auf `application: spilo` / `cluster-name` trifft die CNPG-Pods
+  nicht -> Policy wirkt nicht wie beabsichtigt.
+* Neue CNPG-Pod-Typen (Pooler, Import-/Backup-Jobs) sind in den alten Policies
+  gar nicht beruecksichtigt.
+
+=== Empfohlene Massnahme
+
+* NetworkPolicies auf CNPG-Label-Selektoren umstellen
+  (`cnpg.io/cluster`, ggf. `cnpg.io/instanceRole`) und Pooler-/Job-Pods
+  explizit beruecksichtigen.
+* Nach Umstellung Konnektivitaet verifizieren (App -> `-rw`/`-ro`, Pooler,
+  Backup-Jobs -> S3/Endpoint).
+
+== Offene Punkte
+
+* [ ] Custom-CNPG-Image mit Spilo-Extensions definieren und bauen
+* [ ] Entscheiden, welche Monitoring-Extensions wegfallen koennen
+* [ ] Analyzer um EXTENSIONS-Kategorie (BLOCKER) erweitern
+* [ ] Pooler-Setup fuer CNPG fixen und dokumentieren
+* [ ] Namensschema `-cnpg-cluster` in Konverter + Beispiele uebernehmen
+* [ ] NetworkPolicies von Spilo- auf CNPG-Label-Selektoren umstellen (Pooler/Jobs beruecksichtigen)
+
+== Test-Referenz
+
+* Cluster-Status waehrend Import: `Setting up primary` (1 Instanz)
+* Fehlerquelle: `pg_restore`, `section:pre-data`, `exit status 1`
+* Logging-Pod: `tifa01-cnpg-cluster-1-import`

@@ -1,0 +1,98 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: logical-backup-condor02-postgres-cluster
+  namespace: condor-prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  labels:
+    application: cnpg-logical-backup
+    cluster-name: condor02-postgres-cluster
+    tenant: condor
+spec:
+  schedule: "0 2 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 86400
+      template:
+        metadata:
+          labels:
+            application: cnpg-logical-backup
+            cluster-name: condor02-postgres-cluster
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: logical-backup
+              image: postgres:15
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: PGHOST
+                  value: condor02-postgres-cluster-ro
+                - name: PGPORT
+                  value: "5432"
+                - name: PGUSER
+                  value: postgres
+                - name: PGSSLMODE
+                  value: require
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: condor02-postgres-cluster-superuser
+                      key: password
+                - name: LOGICAL_BACKUP_S3_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: condor02-postgres-cluster-logical-backup
+                      key: LOGICAL_BACKUP_S3_BUCKET
+                - name: LOGICAL_BACKUP_S3_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: condor02-postgres-cluster-logical-backup
+                      key: LOGICAL_BACKUP_S3_ENDPOINT
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: condor02-postgres-cluster-logical-backup
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: condor02-postgres-cluster-logical-backup
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: BACKUP_PREFIX
+                  value: condor02-postgres-cluster/logical
+                - name: DATABASES
+                  value: "condormabasprod condordatastoreprod keycloak"
+              command:
+                - /bin/bash
+                - -ec
+                - |
+                  set -o pipefail
+                  apt-get update -qq && apt-get install -y -qq awscli >/dev/null
+                  TS="$(date -u +%Y%m%dT%H%M%SZ)"
+                  ENDPOINT_ARGS=()
+                  if [[ -n "${LOGICAL_BACKUP_S3_ENDPOINT}" && "${LOGICAL_BACKUP_S3_ENDPOINT}" != "REPLACE_ME" ]]; then
+                    ENDPOINT_ARGS=(--endpoint-url "${LOGICAL_BACKUP_S3_ENDPOINT}")
+                  fi
+                  for db in ${DATABASES}; do
+                    OUT="/tmp/${db}-${TS}.dump.gz"
+                    echo "Dumping ${db} from ${PGHOST}..."
+                    pg_dump -Fc "${db}" | gzip > "${OUT}"
+                    aws s3 cp "${OUT}" \
+                      "s3://${LOGICAL_BACKUP_S3_BUCKET}/${BACKUP_PREFIX}/${db}/${TS}.dump.gz" \
+                      "${ENDPOINT_ARGS[@]}"
+                    rm -f "${OUT}"
+                    echo "Uploaded ${db} backup."
+                  done
+              resources:
+                requests:
+                  cpu: "2"
+                  memory: 4Gi
+                limits:
+                  cpu: "4"
+                  memory: 8Gi

@@ -1,0 +1,42 @@
+# ArgoCD Application — Condor CNPG (Referenz)
+# Repo/Pfad/Cluster vor manuellem Apply anpassen. Nicht auf main in pcm-prod-apps committen.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: condor02-cnpg
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    tenant: condor
+    partition: p03-stg
+spec:
+  project: REPLACE_ME_ARGOCD_PROJECT
+  source:
+    repoURL: REPLACE_ME_GIT_REPO_URL
+    targetRevision: REPLACE_ME_GIT_REVISION
+    path: examples/condor
+  destination:
+    name: REPLACE_ME_CLUSTER_NAME
+    namespace: condor-prod
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      jqPathExpressions:
+        - .status
+    - group: postgresql.cnpg.io
+      kind: Backup
+      jqPathExpressions:
+        - .status
+    - group: postgresql.cnpg.io
+      kind: ScheduledBackup
+      jqPathExpressions:
+        - .status

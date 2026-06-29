@@ -1,0 +1,164 @@
+apiVersion: "acid.zalan.do/v1"
+kind: postgresql
+metadata:
+  name: ernstings01-postgres-cluster
+  namespace: ernstings-test
+  annotations:
+    acid.zalan.do/controller: multi-04
+spec:
+  env:
+    - name: WALG_DISK_RATE_LIMIT
+      valueFrom:
+        secretKeyRef:
+          key: WALG_DISK_RATE_LIMIT
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: WALG_DOWNLOAD_CONCURRENCY
+      valueFrom:
+        secretKeyRef:
+          key: WALG_DOWNLOAD_CONCURRENCY
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: WALG_UPLOAD_CONCURRENCY
+      valueFrom:
+        secretKeyRef:
+          key: WALG_UPLOAD_CONCURRENCY
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: BACKUP_NUM_TO_RETAIN
+      valueFrom:
+        secretKeyRef:
+          key: BACKUP_NUM_TO_RETAIN
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: BACKUP_SCHEDULE
+      valueFrom:
+        secretKeyRef:
+          key: BACKUP_SCHEDULE
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: USE_WALG_BACKUP
+      valueFrom:
+        secretKeyRef:
+          key: USE_WALG_BACKUP
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: USE_WALG_RESTORE
+      valueFrom:
+        secretKeyRef:
+          key: USE_WALG_RESTORE
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: WALG_COMPRESSION_METHOD
+      valueFrom:
+        secretKeyRef:
+          key: WALG_COMPRESSION_METHOD
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: WAL_S3_BUCKET
+      valueFrom:
+        secretKeyRef:
+          key: WAL_S3_BUCKET
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: WAL_BUCKET_SCOPE_PREFIX
+      valueFrom:
+        secretKeyRef:
+          key: WAL_BUCKET_SCOPE_PREFIX
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: WAL_BUCKET_SCOPE_SUFFIX
+      valueFrom:
+        secretKeyRef:
+          key: WAL_BUCKET_SCOPE_SUFFIX
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          key: AWS_ACCESS_KEY_ID
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          key: AWS_SECRET_ACCESS_KEY
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: AWS_ENDPOINT
+      valueFrom:
+        secretKeyRef:
+          key: AWS_ENDPOINT
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: AWS_S3_FORCE_PATH_STYLE
+      valueFrom:
+        secretKeyRef:
+          key: AWS_S3_FORCE_PATH_STYLE
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: AWS_REGION
+      valueFrom:
+        secretKeyRef:
+          key: AWS_REGION
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: WALG_LIBSODIUM_KEY
+      valueFrom:
+        secretKeyRef:
+          key: WALG_LIBSODIUM_KEY
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+    - name: WALG_LIBSODIUM_KEY_TRANSFORM
+      valueFrom:
+        secretKeyRef:
+          key: WALG_LIBSODIUM_KEY_TRANSFORM
+          name: gc-wal-encryption-settings-ernstings01-postgres-cluster
+  teamId: "ernstings01"
+  volume:
+    size: 60Gi
+    storageClass: partition-gold-encrypted
+  patroni:
+    loop_wait: 10
+    retry_timeout: 90
+    ttl: 190
+  numberOfInstances: 1
+  enableLogicalBackup: true
+  users:
+    # database owner
+    ernstings:
+      - superuser
+      - createdb
+  preparedDatabases:
+    ernstingsmabastest:
+      defaultUsers: true
+      schemas:
+        public:
+          defaultUsers: true
+    ernstingsdatastoretest:
+      defaultUsers: true
+      schemas:
+        public:
+          defaultUsers: true
+    ernstingsmabastest2:
+      defaultUsers: true
+      schemas:
+        public:
+          defaultUsers: true
+    ernstingsdatastoretest2:
+      defaultUsers: true
+      schemas:
+        public:
+          defaultUsers: true
+    keycloak:
+      defaultUsers: true
+      schemas:
+        public:
+          defaultUsers: true
+  postgresql:
+    version: "15"
+    parameters:
+      shared_preload_libraries: "bg_mon,pg_stat_statements,pgextwlist,pg_auth_mon,set_user,timescaledb,pg_cron,pg_stat_kcache,auto_explain,pg_mon"
+      max_connections: "150"
+      work_mem: "24MB"
+      shared_buffers: "1GB"
+      min_wal_size: "1GB"
+      max_wal_size: "2GB"
+      effective_cache_size: "4GB"
+      enable_indexscan: "on"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      auto_explain.log_min_duration: "1s"
+      auto_explain.log_analyze: "on"
+      auto_explain.log_format: "text"
+      compute_query_id: "on"
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 3Gi
+    requests:
+      cpu: 100m
+      memory: 3Gi

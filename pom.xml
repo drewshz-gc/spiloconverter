@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>de.guidecom.connect</groupId>
+    <artifactId>spiloconverter</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>spilo2cnpg</name>
+    <description>Migrates Zalando Spilo / Postgres Operator clusters to CloudNativePG</description>
+
+    <properties>
+        <java.version>25</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <picocli.version>4.7.7</picocli.version>
+        <asciidoctor.maven.plugin.version>3.1.1</asciidoctor.maven.plugin.version>
+        <asciidoctorj.version>3.0.0</asciidoctorj.version>
+        <asciidoctorj.diagram.version>2.3.1</asciidoctorj.diagram.version>
+        <asciidoctorj.revealjs.version>5.1.0</asciidoctorj.revealjs.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-log4j2</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+            <version>${picocli.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- Picocli annotation processor: generates reflect-config.json for native image -->
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli-codegen</artifactId>
+            <version>${picocli.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Testing (JUnit 5 via Spring Boot test starter) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- Explicit annotationProcessorPaths: Lombok + Picocli codegen -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </path>
+                        <path>
+                            <groupId>info.picocli</groupId>
+                            <artifactId>picocli-codegen</artifactId>
+                            <version>${picocli.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                    <compilerArgs>
+                        <arg>-Aproject=${project.groupId}/${project.artifactId}</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>de.guidecom.connect.spilo2cnpg.SpiloConverterApplication</mainClass>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.asciidoctor</groupId>
+                <artifactId>asciidoctor-maven-plugin</artifactId>
+                <version>${asciidoctor.maven.plugin.version}</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj</artifactId>
+                        <version>${asciidoctorj.version}</version>
+                    </dependency>
+                    <!-- PlantUML and other diagram support -->
+                    <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj-diagram</artifactId>
+                        <version>${asciidoctorj.diagram.version}</version>
+                    </dependency>
+                    <!-- Reveal.js backend -->
+                    <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj-revealjs</artifactId>
+                        <version>${asciidoctorj.revealjs.version}</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <sourceDirectory>${project.basedir}/src/main/doc</sourceDirectory>
+                    <requires>
+                        <require>asciidoctor-diagram</require>
+                    </requires>
+                    <attributes>
+                        <source-highlighter>highlight.js</source-highlighter>
+                        <icons>font</icons>
+                        <toc>left</toc>
+                        <toclevels>3</toclevels>
+                        <sectanchors>true</sectanchors>
+                        <idprefix/>
+                        <idseparator>-</idseparator>
+                    </attributes>
+                </configuration>
+                <executions>
+                    <!-- HTML5 output (standard documentation) -->
+                    <execution>
+                        <id>generate-html</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>process-asciidoc</goal>
+                        </goals>
+                        <configuration>
+                            <backend>html5</backend>
+                            <outputDirectory>${project.basedir}/generated-docs/html</outputDirectory>
+                            <attributes>
+                                <imagesdir>images</imagesdir>
+                            </attributes>
+                        </configuration>
+                    </execution>
+                    <!-- Reveal.js presentation output -->
+                    <execution>
+                        <id>generate-revealjs</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>process-asciidoc</goal>
+                        </goals>
+                        <configuration>
+                            <backend>revealjs</backend>
+                            <outputDirectory>${project.basedir}/generated-docs/revealjs</outputDirectory>
+                            <attributes>
+                                <imagesdir>images</imagesdir>
+                                <!-- Points to reveal.js via CDN (no local install required) -->
+                                <revealjsdir>https://cdn.jsdelivr.net/npm/reveal.js@5.1.0</revealjsdir>
+                                <revealjs_theme>night</revealjs_theme>
+                                <revealjs_slideNumber>true</revealjs_slideNumber>
+                                <revealjs_transition>slide</revealjs_transition>
+                                <revealjs_width>1400</revealjs_width>
+                                <revealjs_height>900</revealjs_height>
+                            </attributes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>native</id>
+            <!--
+                Build a native executable:
+                  JAVA_HOME=~/.sdkman/candidates/java/25.0.2-graalce mvn -Pnative package
+                Or use the provided build-native.sh script.
+            -->
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <configuration>
+                            <imageName>spilo2cnpg</imageName>
+                            <buildArgs>
+                                <!-- Fail the build instead of producing a fallback JAR -->
+                                <buildArg>--no-fallback</buildArg>
+                                <!-- Compatible with most x86-64 hosts -->
+                                <buildArg>-march=compatibility</buildArg>
+                                <buildArg>-H:+ReportExceptionStackTraces</buildArg>
+                            </buildArgs>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <goals>
+                                    <!-- compile-no-fork reuses already-compiled classes -->
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <phase>package</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+</project>
