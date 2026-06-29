@@ -21,6 +21,10 @@ Runs the analyzer first and aborts if blockers are found (unless `--force` is se
 `convert-all`:: Recursively scans a directory tree for Spilo CRs and batch-converts each one,
 writing the resulting CNPG manifests next to the sources (or into `--output-dir`).
 
+`compare`:: Structurally compares two (multi-document) manifest files resource by resource,
+ignoring key ordering, comments and cosmetic scalar quoting. Useful to verify that a generated
+manifest set matches a reference (e.g. the deployed pilot).
+
 NOTE: Analysis and conversion are file-based. Reading clusters directly from a live Kubernetes
 API server is not implemented.
 
@@ -71,6 +75,18 @@ java -jar target/spiloconverter-1.0.0.jar convert-all ./manifests \
   --output-dir ./out \
   --dry-run
 ----
+
+=== Verify a generated set against a reference
+
+[source,bash]
+----
+java -jar target/spiloconverter-1.0.0.jar compare generated.yaml deployed.yaml \
+  --left-label generated --right-label deployed
+----
+
+Reports per resource (indexed by `kind/namespace/name`) whether it is identical, differs
+(with the exact field paths), or exists only on one side. Exit code `0` when the two sides are
+structurally identical, `1` otherwise -- handy as a CI guard.
 
 === Security-relevant flags
 

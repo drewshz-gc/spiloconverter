@@ -1,6 +1,7 @@
 package de.guidecom.connect.spilo2cnpg;
 
 import de.guidecom.connect.spilo2cnpg.cli.AnalyzeCommand;
+import de.guidecom.connect.spilo2cnpg.cli.CompareCommand;
 import de.guidecom.connect.spilo2cnpg.cli.ConvertAllCommand;
 import de.guidecom.connect.spilo2cnpg.cli.GenerateCommand;
 import de.guidecom.connect.spilo2cnpg.cli.SpiloCnpgCommand;
@@ -42,6 +43,7 @@ public class SpiloConverterApplication implements CommandLineRunner, ExitCodeGen
         .addSubcommand("analyze", new AnalyzeCommand(conversionService))
         .addSubcommand("generate", new GenerateCommand(conversionService))
         .addSubcommand("convert-all", new ConvertAllCommand(conversionService))
+        .addSubcommand("compare", new CompareCommand())
         .execute(args);
   }
 
