@@ -2,28 +2,227 @@
 :toc:
 :toc-placement: preamble
 
-Java-CLI: Analyse und Konvertierung von Zalando/Spilo-CRs nach CloudNativePG.
+Java-CLI und Bibliothek zur Analyse und Konvertierung von Zalando-Spilo-`postgresql`-CRs
+in CloudNativePG-`Cluster`-Manifeste.
 
-== Dokumentation
+Dieses README beschreibt *nur den Code in diesem Repository* (Build, Architektur, CLI, Tests).
+Migrationsprojekt, Runbooks und Betriebskonzepte liegen in
+`cloud-native-postgres-operator/documentation/`.
 
-* *Vollstaendige CLI-Referenz:* `cloud-native-postgres-operator/documentation/tooling/spilo2cnpg.adoc`
-* *Migrationsprojekt, Runbooks, Konzepte:* `cloud-native-postgres-operator/documentation/` (fuehrendes Repo)
-* Governance: `cloud-native-postgres-operator/documentation/GOVERNANCE.adoc`
+== Voraussetzungen
+
+* Java *25* (lokal z. B. `sdk install java 25.0.2-graalce`)
+* Maven 3.9+
 
 == Quick Start
 
 [source,bash]
 ----
 mvn -q package -DskipTests
-java -jar target/spiloconverter-*.jar analyze --file path/to/postgres-cluster.yaml
-# Eine Datei, ein Cluster-Dokument (keine Companion-CRs, kein ---)
-java -jar target/spiloconverter-*.jar generate path/to/postgres-cluster.yaml -o path/to/cluster-cnpg.yaml
+java -jar target/spiloconverter-*.jar analyze --file data/postgresql-condor02-postgres-cluster.yml
+java -jar target/spiloconverter-*.jar generate data/postgresql-condor02-postgres-cluster.yml \
+  --s3-bucket REPLACE_ME_WAL_S3_BUCKET \
+  -o /tmp/condor02-cnpg-cluster.yaml
 ----
 
-== Build
+== CLI-Befehle
+
+|===
+| Befehl | Zweck
+
+| `analyze`
+| Kompatibilitaetsanalyse eines Spilo-CR (Blocker, Warnungen, Hinweise)
+
+| `generate`
+| Ein Spilo-CR in ein CNPG-`Cluster`-YAML konvertieren
+
+| `convert-all`
+| Verzeichnisbaum rekursiv scannen und pro Treffer eine `*-cnpg.yaml` schreiben
+
+| `compare`
+| Zwei Manifest-Dateien strukturell vergleichen (z. B. generiert vs. deployed)
+|===
+
+Hilfe pro Befehl: `java -jar target/spiloconverter-*.jar <befehl> --help`
+
+=== analyze
 
 [source,bash]
 ----
-mvn package
-mvn generate-resources   # cnpg-highlights-Redirect in src/main/doc (nicht mehr fuehrend)
+java -jar target/spiloconverter-*.jar analyze --file path/to/postgres-cluster.yaml
 ----
+
+Liefert `MigrationReadiness`: `READY`, `READY_WITH_WARNINGS` oder `BLOCKED`.
+Bei Blockern bricht `generate` / `convert-all` ab (ausser mit `--force`).
+
+=== generate
+
+[source,bash]
+----
+# Standard: logischer Monolith-Import (PG15-Quelle -> PG18-Ziel)
+java -jar target/spiloconverter-*.jar generate path/to/postgres-cluster.yaml \
+  --s3-bucket REPLACE_ME_WAL_S3_BUCKET \
+  --s3-endpoint-url https://s3.example.local \
+  -o path/to/cluster-cnpg.yaml
+
+# Ohne physisches Backup-Plugin im Cluster-Spec
+java -jar target/spiloconverter-*.jar generate path/to/postgres-cluster.yaml \
+  --no-backup-plugin \
+  -o path/to/cluster-cnpg.yaml
+
+# GitOps: ArgoCD-Annotationen
+java -jar target/spiloconverter-*.jar generate path/to/postgres-cluster.yaml \
+  --argocd --sync-wave 0 \
+  -o path/to/cluster-cnpg.yaml
+----
+
+Wichtige Optionen:
+
+* `--strategy` — `MONOLITH_IMPORT` (Default), `INITDB`, `WAL_RECOVERY`
+* `--target-image` — Ziel-Image (Default: `ghcr.io/cloudnative-pg/postgresql:18.3-standard-trixie`)
+* `--target-namespace` — Ziel-Namespace (Default: Quell-Namespace)
+* `--s3-bucket`, `--s3-endpoint-url`, `--s3-destination-path`, `--backup-credentials-secret`
+* `--enable-superuser-access` — CNPG-Superuser aktivieren (Default: aus)
+* `--networking-labels` / `--no-networking-labels` — Plattform-Egress-Labels
+* `--force` — trotz Blockern schreiben
+
+NOTE: Die Flags `--pooler`, `--pod-monitor` und `--scheduled-backup` steuern nur die interne
+`convertAll()`-Logik (Tests). `generate` und `convert-all` schreiben *keine* Companion-CRs.
+
+=== convert-all
+
+[source,bash]
+----
+# Schreibt <basename>-cnpg.yaml neben jede Quelldatei
+java -jar target/spiloconverter-*.jar convert-all ./manifests
+
+# Vorschau ohne Schreiben
+java -jar target/spiloconverter-*.jar convert-all ./manifests --dry-run
+
+# Eigenes Ausgabeverzeichnis und Dateimuster
+java -jar target/spiloconverter-*.jar convert-all ./manifests \
+  --pattern '*postgres*' \
+  --output-dir ./out
+----
+
+=== compare
+
+[source,bash]
+----
+java -jar target/spiloconverter-*.jar compare generated.yaml reference.yaml \
+  --left-label generated --right-label deployed
+----
+
+Exit-Code `0` bei struktureller Gleichheit, sonst `1`. Vergleicht pro Resource
+(`kind`/`namespace`/`name`), ignoriert Key-Reihenfolge und Kommentare.
+
+== Generator-Output
+
+`generate` und `convert-all` erzeugen *genau ein YAML-Dokument* pro Datei:
+
+* `kind: Cluster` only
+* *kein* Multi-Document (`---`)
+* *keine* `Database`-CRDs (Multi-DB via `bootstrap.initdb.import.databases: ["*"]`)
+* *keine* separaten Dateien fuer `ObjectStore`, `Pooler`, `PodMonitor`, `ScheduledBackup`
+
+Companion-Ressourcen und tenant-spezifische Ergaenzungen (Logical-Backup-CronJob, Secrets,
+Netzwerk-Policies) werden *ausserhalb* dieses Tools gepflegt.
+
+Mit `--s3-bucket` referenziert das `Cluster`-Spec das Barman-Cloud-Plugin
+(`spec.plugins`); die `ObjectStore`-CR muss separat bereitgestellt werden.
+
+== Build und Tests
+
+[source,bash]
+----
+mvn package                    # Kompilieren + Tests
+mvn -q test                    # Nur Tests
+mvn -q package -DskipTests     # Schneller JAR-Build
+./build-native.sh              # GraalVM-Native-Image -> target/spilo2cnpg
+./build-native.sh --quick      # Native-Build ohne Tests
+----
+
+Tests unter `src/test/java/de/guidecom/connect/spilo2cnpg/`:
+
+* `SpiloAnalyzerTest` — Analyse-Regeln
+* `SpiloToCnpgConverterTest` — Konvertierungslogik und Companion-Hilfsmethoden
+* `YamlRoundTripTest` — alle Fixtures unter `data/` (read -> analyze -> convert -> YAML)
+* `ManifestComparatorTest` — struktureller Diff
+
+Fixtures: `data/postgresql-*-postgres-cluster.yml`
+
+== Code-Architektur
+
+[source]
+----
+src/main/java/de/guidecom/connect/spilo2cnpg/
+├── SpiloConverterApplication.java    # Spring-Boot-Einstieg
+├── SpiloAnalyzer.java                # Kompatibilitaetspruefungen
+├── SpiloToCnpgConverter.java         # Spilo -> CnpgCluster (+ intern convertAll)
+├── ConversionService.java            # read / analyze / convertToYaml
+├── ConversionOptions.java            # CLI- und Konvertierungsoptionen
+├── cli/
+│   ├── SpiloCnpgCommand.java         # Picocli-Root
+│   ├── AnalyzeCommand.java
+│   ├── GenerateCommand.java
+│   ├── ConvertAllCommand.java
+│   └── CompareCommand.java
+├── analyzer/
+│   └── AnalysisResult.java           # Readiness, Severity, Findings
+├── model/
+│   ├── spilo/SpiloPostgresql.java    # Eingabe-CR
+│   └── cnpg/CnpgCluster.java         # Ausgabe-CR
+├── config/JacksonConfig.java         # YAML-Serialisierung (ohne doc-start ---)
+└── support/
+    ├── CnpgCompatibility.java        # Versionen, Ziel-Image
+    └── ManifestComparator.java       # Vergleichslogik fuer compare
+----
+
+=== Ablauf generate
+
+1. `ConversionService.read()` — Spilo-YAML deserialisieren
+2. `SpiloAnalyzer.analyze()` — Findings erzeugen; bei `BLOCKED` Abbruch (ohne `--force`)
+3. `SpiloToCnpgConverter.convert()` — `CnpgCluster` aufbauen
+4. `ConversionService.convertToYaml()` — ein YAML-Dokument serialisieren
+
+`SpiloToCnpgConverter.convertAll()` baut zusaetzlich Companion-Maps (ObjectStore, Pooler, …)
+fuer Tests und interne Validierung; die CLI schreibt sie nicht.
+
+=== Bootstrap-Strategien
+
+|===
+| Strategie | Verhalten
+
+| `MONOLITH_IMPORT`
+| `bootstrap.initdb.import` (monolith), logischer Import vom laufenden Spilo-Primary;
+Major-Upgrade moeglich (z. B. 15 -> 18). *Default.*
+
+| `INITDB`
+| Leerer Cluster via `initdb`; Datenmigration separat
+
+| `WAL_RECOVERY`
+| Recovery aus Barman-kompatiblem S3-Archiv; *kein* Major-Upgrade;
+Spilo-WAL-G-Archive sind nicht kompatibel
+|===
+
+=== Namenskonvention
+
+Spilo-Name `tifa01-postgres-cluster` wird zu CNPG-Name `tifa01-cnpg-cluster`
+(Suffix `-postgres-cluster` -> `-cnpg-cluster`).
+Import-Quelle: `externalClusters[].name = spilo-tifa01-source`.
+
+== Beispiele im Repository
+
+`examples/condor/` — Referenz-GitOps-Layout fuer einen migrierten Tenant:
+
+* `cluster.yaml` — CNPG-Cluster (manuell oder via `generate` erzeugt)
+* `database-*.yaml` — *nicht* vom Generator; nur bei expliziter Database-CR-Strategie
+* `scheduled-backup-physical.yaml`, `logical-backup-cronjob.yaml` — Betriebs-Ergaenzungen
+* `kustomization.yaml`, `argocd/`, `secrets/` — Deployment-Hilfen
+
+== Weiterfuehrende Dokumentation
+
+Vollstaendige CLI-Referenz und Migrationskontext:
+
+* `cloud-native-postgres-operator/documentation/tooling/spilo2cnpg.adoc`
+* `cloud-native-postgres-operator/documentation/GOVERNANCE.adoc`
