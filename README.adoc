@@ -16,7 +16,8 @@ Java-CLI: Analyse und Konvertierung von Zalando/Spilo-CRs nach CloudNativePG.
 ----
 mvn -q package -DskipTests
 java -jar target/spiloconverter-*.jar analyze --file path/to/postgres-cluster.yaml
-java -jar target/spiloconverter-*.jar generate path/to/postgres-cluster.yaml -o cnpg/
+# Eine Datei, ein Cluster-Dokument (keine Companion-CRs, kein ---)
+java -jar target/spiloconverter-*.jar generate path/to/postgres-cluster.yaml -o path/to/cluster-cnpg.yaml
 ----
 
 == Build

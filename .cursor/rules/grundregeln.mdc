@@ -7,3 +7,4 @@ alwaysApply: true
 
 - Niemals Ruby verwenden.
 - Nie Tutorialcode heranziehen.
+- Platzhalter immer als solche kennzeichnen, z. B. `dbx <tenant> <stage>`. Keine mehrdeutigen Abkürzungen (etwa `stg`), die mit echten Werten verwechselt werden können.
