@@ -63,19 +63,4 @@ public class ConversionService {
     return outputMapper.writeValueAsString(cluster);
   }
 
-  /**
-   * Converts the Spilo CR to the full manifest set (Cluster + companion resources) and serializes
-   * it as a multi-document YAML string ({@code ---}-separated).
-   */
-  public String convertAllToYaml(SpiloPostgresql spilo, ConversionOptions options) throws JsonProcessingException {
-    List<Object> manifests = converter.convertAll(spilo, options);
-    StringBuilder sb = new StringBuilder();
-    for (int i = 0; i < manifests.size(); i++) {
-      if (i > 0) {
-        sb.append("---\n");
-      }
-      sb.append(outputMapper.writeValueAsString(manifests.get(i)));
-    }
-    return sb.toString();
-  }
 }

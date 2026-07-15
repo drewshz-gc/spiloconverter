@@ -364,6 +364,24 @@ class SpiloToCnpgConverterTest {
   }
 
   @Test
+  void generateOutputIsSingleClusterDocument() throws Exception {
+    ConversionService service = new ConversionService(
+        new SpiloAnalyzer(), converter,
+        new de.guidecom.connect.spilo2cnpg.config.JacksonConfig().yamlMapper(),
+        new de.guidecom.connect.spilo2cnpg.config.JacksonConfig().yamlOutputMapper());
+    String yaml = service.convertToYaml(SpiloTestFixtures.readyCr(), withBackup());
+    assertFalse(yaml.contains("---"));
+    assertTrue(yaml.contains("kind: \"Cluster\"") || yaml.contains("kind: Cluster"));
+    assertFalse(yaml.contains("ObjectStore"));
+  }
+
+  @Test
+  void convertAllDoesNotEmitDatabaseCr() {
+    List<Object> manifests = converter.convertAll(SpiloTestFixtures.readyCr(), withBackup());
+    assertNull(findKind(manifests, "Database"));
+  }
+
+  @Test
   void companionResourcesCanBeDisabled() {
     ConversionOptions options = ConversionOptions.builder()
         .s3Bucket("cnpg-test")

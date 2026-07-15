@@ -18,14 +18,14 @@ import java.util.concurrent.Callable;
 /**
  * CLI command: {@code spilo2cnpg generate <file> [options]}
  *
- * <p>Converts a Spilo {@code postgresql} CR into a CloudNativePG manifest set (Cluster plus the
- * companion resources: Barman Cloud ObjectStore, Poolers, PodMonitors, ScheduledBackup).
+ * <p>Converts a Spilo {@code postgresql} CR into a single CNPG {@code Cluster} YAML document.
+ * Companion resources (ObjectStore, Pooler, PodMonitor, ScheduledBackup) are not emitted.
  * Runs the analyzer first and aborts if blockers are found (unless {@code --force} is set).
  */
 @Command(
     name = "generate",
     mixinStandardHelpOptions = true,
-    description = "Convert a Spilo postgresql CR to a CNPG manifest set"
+    description = "Convert a Spilo postgresql CR to a CNPG Cluster YAML"
 )
 public class GenerateCommand implements Callable<Integer> {
 
@@ -132,7 +132,7 @@ public class GenerateCommand implements Callable<Integer> {
     }
     ConversionOptions options = optionsBuilder.build();
 
-    String yaml = conversionService.convertAllToYaml(spilo, options);
+    String yaml = conversionService.convertToYaml(spilo, options);
 
     if (outputFile != null) {
       Files.writeString(outputFile.toPath(), yaml);

@@ -25,7 +25,8 @@ import java.util.stream.Stream;
  *
  * <p>Recursively scans a directory tree for Spilo postgres CR files (matched by a glob
  * pattern, default {@code *postgres*}), analyzes and converts each one, and writes
- * the resulting CNPG manifest set next to the source file (or into {@code --output-dir}).
+ * a single {@code Cluster} YAML file ({@code *-cnpg.yaml}) next to the source file (or into
+ * {@code --output-dir}). One document only; no companion CRs and no {@code ---} separators.
  */
 @Command(
     name = "convert-all",
@@ -210,7 +211,7 @@ public class ConvertAllCommand implements Callable<Integer> {
 
     String yaml;
     try {
-      yaml = conversionService.convertAllToYaml(spilo, options);
+      yaml = conversionService.convertToYaml(spilo, options);
     } catch (Exception e) {
       System.out.println("[CONVERT ERROR]");
       return new ConversionResult(inputFile, null, analysis, Status.ERROR, "Convert error: " + e.getMessage());
