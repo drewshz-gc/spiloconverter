@@ -1,61 +1,6 @@
-= Condor CNPG Migration (Monolith + wöchentliches Logical Backup)
+= Condor CNPG Beispiel (verwiesen)
 
-Referenz-Manifeste für die Migration von `condor02-postgres-cluster` (Spilo/Zalando)
-nach CloudNativePG. Deployment-Ziel: **ArgoCD** (Integration in `pcm-prod-apps` auf Feature-Branch).
-
-== Ausgangslage (Spilo)
-
-* Namespace: `condor-prod`
-* 2 Instanzen via `power-backup-02` (backup-only Standby + Logical Backup)
-* Multi-DB: `condormabasprod`, `condordatastoreprod`, `keycloak`
-* 16 Gi RAM, 1400 Gi Storage, PostgreSQL 15
-* WAL-G → S3, `enableLogicalBackup: true`
-
-== Zielarchitektur (CNPG)
-
-* **Monolith:** alle 3 DBs in einem CNPG-Cluster
-* **2 gleichwertige HA-Instanzen** (kein backup-only Replika)
-* **Physisches Backup:** Barman `ScheduledBackup`, `target: prefer-standby`
-* **Logical Backup (Vertrag):** separater `CronJob`, wöchentlich (So 02:00), via `-ro` Service
-
-== ArgoCD Sync-Reihenfolge
-
-[cols="1,2,1"]
-|===
-| Wave | Ressource | Datei
-
-| 0 | CNPG Cluster | `cluster.yaml`
-| 1 | Database CRDs | `database-*.yaml`
-| 2 | ScheduledBackup (physisch) | `scheduled-backup-physical.yaml`
-| 3 | CronJob (logical) | `logical-backup-cronjob.yaml`
-|===
-
-== Integration in pcm-prod-apps (empfohlen)
-
-Auf einem **Feature-Branch** (nicht `main`):
-
-1. Manifeste aus `examples/condor/` nach `p03-stg/condor-prod/tenants/condor/` kopieren
-2. In `kustomization.yaml` Spilo ersetzen:
-   **entfernen:** `condor-prod-postgresql-condor02-postgres-cluster.yaml`
-   **hinzufügen:** CNPG-Manifeste
-3. Logical-Backup-Secret **nicht** aus Git syncen
-4. ArgoCD sync über bestehende Tenant-Application
-
-Alternativ: `argocd/application.yaml` als separate Application (Platzhalter anpassen).
-
-== Secrets (nicht via ArgoCD aus Git)
-
-| Secret | Zweck | Quelle
-| `gc-wal-encryption-settings-condor02-postgres-cluster` | Barman/WAL S3 | Spilo (vorhanden)
-| `condor02-postgres-cluster-superuser` | pg_dump | CNPG-Operator
-| `condor02-postgres-cluster-logical-backup` | S3 Logical Backup | manuell / ExternalSecrets
-| `condor.credentials.postgresql.acid.zalan.do` | App-User | vorhanden
-
-Vorlage: `secrets/logical-backup-secret.example.yaml`
-
-== Lokale Validierung (ohne Cluster-Apply)
-
-[source,bash]
-----
-kubectl kustomize examples/condor/
-----
+[IMPORTANT]
+====
+Verschoben nach `cloud-native-postgres-operator/documentation/examples/condor/`.
+====
