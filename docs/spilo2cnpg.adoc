@@ -1,0 +1,245 @@
+= spilo2cnpg — CLI-Referenz
+:toc:
+:toc-placement: preamble
+
+
+Migration analyzer and manifest converter from Zalando Spilo / Postgres Operator to CloudNativePG.
+
+== Overview
+
+`spilo2cnpg` helps you migrate PostgreSQL clusters managed by the https://github.com/zalando/postgres-operator[Zalando Postgres Operator (Spilo)]
+to https://cloudnative-pg.io/[CloudNativePG (CNPG)].
+
+It provides three commands:
+
+`analyze`:: Reads a Spilo `postgresql` CR from a file and checks for CNPG compatibility.
+Produces a structured report of blockers, warnings, and informational findings organized by category.
+
+`generate`:: Converts a single Spilo CR to one CNPG `Cluster` YAML document.
+Runs the analyzer first and aborts if blockers are found (unless `--force` is set).
+
+`convert-all`:: Recursively scans a directory tree for Spilo CRs and batch-converts each one,
+writing a `*-cnpg.yaml` file (single `Cluster` document) next to the sources (or into `--output-dir`).
+
+`compare`:: Structurally compares two (multi-document) manifest files resource by resource,
+ignoring key ordering, comments and cosmetic scalar quoting. Useful to verify that a generated
+manifest set matches a reference (e.g. the deployed pilot).
+
+NOTE: Analysis and conversion are file-based. Reading clusters directly from a live Kubernetes
+API server is not implemented.
+
+== Usage
+
+The examples below assume the repackaged jar `target/spiloconverter-1.0.0.jar`
+(or the native binary `target/spilo2cnpg`, see <<Building>>).
+
+=== Analyze a local file
+
+[source,bash]
+----
+java -jar target/spiloconverter-1.0.0.jar analyze --file myapp-db.yaml
+----
+
+=== Generate a CNPG Cluster YAML
+
+[source,bash]
+----
+# Default: logical monolith import from the live Spilo primary directly onto PG18
+java -jar target/spiloconverter-1.0.0.jar generate myapp-db.yaml \
+  --argocd --sync-wave 0 \
+  --s3-bucket my-pg-backups \
+  --s3-endpoint-url https://s3.example.local \
+  --output cnpg-cluster.yaml
+
+# Without Barman plugin reference in spec.plugins
+java -jar target/spiloconverter-1.0.0.jar generate myapp-db.yaml \
+  --no-backup-plugin \
+  --output cnpg-cluster.yaml
+----
+
+The output is *one YAML document* per file (`kind: Cluster` only).
+
+* kein Multi-Document (`---`)
+* keine `Database`-CRDs (Multi-DB via `bootstrap.initdb.import.databases: ["*"]`)
+* keine Companion-CR-Dateien (`ObjectStore`, `Pooler`, `PodMonitor`, `ScheduledBackup`)
+
+Mit `--s3-bucket` referenziert das Cluster-Spec das Barman-Cloud-Plugin (`spec.plugins`);
+die `ObjectStore`-CR wird separat im GitOps-Repo gepflegt.
+
+NOTE: `--pooler`, `--pod-monitor` und `--scheduled-backup` betreffen nur interne
+`convertAll()`-Logik in Tests, nicht die CLI-Ausgabe.
+
+=== Batch-convert a directory tree
+
+[source,bash]
+----
+# Convert every matching CR under ./manifests, writing *-cnpg.yaml next to each source
+java -jar target/spiloconverter-1.0.0.jar convert-all ./manifests
+
+# Preview only, with a custom filename pattern and a separate output directory
+java -jar target/spiloconverter-1.0.0.jar convert-all ./manifests \
+  --pattern '*postgres*' \
+  --output-dir ./out \
+  --dry-run
+----
+
+=== Verify a generated set against a reference
+
+[source,bash]
+----
+java -jar target/spiloconverter-1.0.0.jar compare generated.yaml deployed.yaml \
+  --left-label generated --right-label deployed
+----
+
+Reports per resource (indexed by `kind/namespace/name`) whether it is identical, differs
+(with the exact field paths), or exists only on one side. Exit code `0` when the two sides are
+structurally identical, `1` otherwise -- handy as a CI guard.
+
+=== Security-relevant flags
+
+By default the generated cluster keeps the CNPG superuser disabled and managed roles are created
+without the `superuser` attribute. Opt in explicitly when a superuser is genuinely required:
+
+[source,bash]
+----
+java -jar target/spiloconverter-1.0.0.jar generate myapp-db.yaml \
+  --enable-superuser-access
+----
+
+The same flag is available on `convert-all`.
+
+NOTE: Managed roles and the import source reference the Zalando-managed password secrets
+(`<user>.<spilo-cluster>.credentials.postgresql.acid.zalan.do`). For the logical import the
+source Spilo cluster must be reachable and the `postgres` user secret present; for managed roles
+the secrets must exist in the target namespace before applying the manifests. The S3 credentials
+secret (`<cluster>-backup`, keys `ACCESS_KEY_ID` / `ACCESS_SECRET_KEY`) is NOT generated and must
+be provided out-of-band (e.g. SealedSecret/ExternalSecret).
+
+=== ArgoCD / GitOps
+
+For GitOps with ArgoCD, add ArgoCD sync annotations to the generated `Cluster` so it syncs
+cleanly:
+
+[source,bash]
+----
+java -jar target/spiloconverter-1.0.0.jar generate myapp-db.yaml \
+  --argocd \
+  --sync-wave 2
+----
+
+`--argocd` emits:
+
+[source,yaml]
+----
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-options: "ServerSideApply=true,SkipDryRunOnMissingResource=true"
+    argocd.argoproj.io/sync-wave: "2"   # only when --sync-wave is given
+----
+
+* `ServerSideApply=true` avoids client-side apply size/merge problems on large CRs.
+* `SkipDryRunOnMissingResource=true` prevents sync failures when the CNPG CRD is not yet
+  registered (e.g. operator and Cluster applied in the same sync).
+* `--sync-wave <n>` implies `--argocd` and orders the Cluster after its prerequisites
+  (operator, secrets).
+
+Without `--argocd` the manifest stays free of ArgoCD-specific metadata, so it can also be
+applied directly via `kubectl`. The same flags are available on `convert-all`.
+
+== Migration Strategies
+
+=== MONOLITH_IMPORT (default)
+
+Logical import via `bootstrap.initdb.import` (type `monolith`) directly from the live Spilo
+primary. CNPG runs `pg_dump`/`pg_restore` against the source listed in `externalClusters` and
+imports all databases and roles (`["*"]`). Because the data is reloaded logically, this performs
+a *major-version upgrade on the fly* (e.g. PG15 -> PG18) onto the pinned target image.
+
+Spilo/Zalando-specific scaffolding that the vanilla CNPG image lacks is excluded from the dump
+(`metric_helpers` schema, `pg_stat_kcache`/`set_user` extensions, `--no-acl`).
+
+Requires downtime proportional to database size; the source Spilo cluster must stay reachable
+during the import.
+
+=== INITDB
+
+Creates a fresh, empty CNPG cluster via `initdb`. Data must be migrated separately.
+
+=== WAL_RECOVERY
+
+Bootstraps the CNPG cluster from an existing Barman-compatible archive in S3 (requires
+`--s3-bucket`) and does not change the major version.
+
+WARNING: Spilo archives WAL with *WAL-G*, whose format is *not* compatible with CNPG's
+*barman-cloud*. An existing Spilo WAL-G archive therefore cannot be replayed by CNPG. Use this
+strategy only when the source already archives in Barman format. For Spilo sources prefer
+`MONOLITH_IMPORT` (and configure new physical backups via the Barman Cloud Plugin).
+
+== Analysis Categories
+
+[cols="1,3"]
+|===
+|Category |What is checked
+
+|POSTGRES_VERSION |Source version supported (14-18); migrated onto target PG18 via logical import
+|CONFIGURATION |`preparedDatabases` and related Zalando-specific settings
+|BACKUP |WAL-G environment variables, logical backup settings
+|PATRONI |Synchronous mode, replication slots, initdb params, failsafe mode
+|CONNECTION_POOLER |PgBouncer configuration
+|TLS |Custom TLS secrets
+|SIDECARS |Custom sidecar containers
+|ENV_VARS |Spilo-specific env vars with no CNPG equivalent (blockers)
+|RESOURCES |CPU/memory requests and limits
+|USERS_ROLES |Spilo user definitions → CNPG managed roles
+|STORAGE |Volume size and storage class
+|===
+
+== Building
+
+[source,bash]
+----
+# Executable jar
+mvn clean package
+java -jar target/spiloconverter-1.0.0.jar --help
+
+# Run the test suite only
+mvn test
+
+# Native binary (GraalVM, see build-native.sh)
+mvn -Pnative package
+./target/spilo2cnpg --help
+----
+
+== Project Structure
+
+Single Maven module, base package `de.guidecom.connect.spilo2cnpg`:
+
+----
+spiloconverter/
+├── src/main/java/de/guidecom/connect/spilo2cnpg/
+│   ├── SpiloConverterApplication.java  # Spring Boot entry point
+│   ├── SpiloAnalyzer.java              # Compatibility analysis
+│   ├── SpiloToCnpgConverter.java       # Manifest conversion
+│   ├── ConversionService.java          # Shared read/analyze/convert orchestration
+│   ├── ConversionOptions.java          # Conversion options
+│   ├── support/                        # Shared compatibility facts (supported versions)
+│   ├── analyzer/                       # Analysis result model
+│   ├── cli/                            # Picocli commands (analyze, generate, convert-all)
+│   ├── config/                         # Jackson YAML mappers
+│   └── model/
+│       ├── spilo/                      # Zalando CR model
+│       └── cnpg/                       # CNPG Cluster model
+├── src/test/java/                      # JUnit 5 tests
+└── data/                               # Sample Spilo CRs
+----
+
+== Condor CNPG example (ArgoCD)
+
+Referenz-Manifeste für die Condor-Migration (Monolith, wöchentliches Logical Backup):
+`examples/condor/README.adoc`
+
+== Weiterfuehrend
+
+* Governance: link:GOVERNANCE.adoc[GOVERNANCE.adoc]
+* README: link:../README.adoc[README.adoc]
+* Migrationsplan (Projekt): link:datenmigrationsplan.adoc[datenmigrationsplan.adoc] (Redirect)

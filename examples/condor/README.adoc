@@ -1,6 +1,0 @@
-= Condor CNPG Beispiel (verwiesen)
-
-[IMPORTANT]
-====
-Verschoben nach `cloud-native-postgres-operator/documentation/examples/condor/`.
-====
