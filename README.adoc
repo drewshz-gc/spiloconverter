@@ -6,8 +6,8 @@ Java-CLI und Bibliothek zur Analyse und Konvertierung von Zalando-Spilo-`postgre
 in CloudNativePG-`Cluster`-Manifeste.
 
 Dieses README beschreibt *nur den Code in diesem Repository* (Build, Architektur, CLI, Tests).
-Migrationsprojekt, Runbooks und Betriebskonzepte liegen in
-`cloud-native-postgres-operator/documentation/`.
+CLI-Referenz: `docs/spilo2cnpg.adoc`. Governance: `docs/GOVERNANCE.adoc`.
+Migrationsprojekt, Runbooks und Betriebskonzepte liegen in `cloud-native-postgres-operator/documentation/`.
 
 == Voraussetzungen
 
@@ -213,16 +213,12 @@ Import-Quelle: `externalClusters[].name = spilo-tifa01-source`.
 
 == Beispiele im Repository
 
-`examples/condor/` — Referenz-GitOps-Layout fuer einen migrierten Tenant:
-
-* `cluster.yaml` — CNPG-Cluster (manuell oder via `generate` erzeugt)
-* `database-*.yaml` — *nicht* vom Generator; nur bei expliziter Database-CR-Strategie
-* `scheduled-backup-physical.yaml`, `logical-backup-cronjob.yaml` — Betriebs-Ergaenzungen
-* `kustomization.yaml`, `argocd/`, `secrets/` — Deployment-Hilfen
+Condor-Referenz-Manifeste: `cloud-native-postgres-operator/documentation/examples/condor/` (verschoben; Redirect: `examples/condor/README.adoc`)
 
 == Weiterfuehrende Dokumentation
 
 Vollstaendige CLI-Referenz und Migrationskontext:
 
-* `cloud-native-postgres-operator/documentation/tooling/spilo2cnpg.adoc`
-* `cloud-native-postgres-operator/documentation/GOVERNANCE.adoc`
+* link:docs/spilo2cnpg.adoc[docs/spilo2cnpg.adoc]
+* link:docs/GOVERNANCE.adoc[docs/GOVERNANCE.adoc]
+* `cloud-native-postgres-operator/documentation/` (Migrationsprojekt)
