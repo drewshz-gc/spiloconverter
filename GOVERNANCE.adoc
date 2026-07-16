@@ -1,0 +1,46 @@
+= Governance: Dokumentation und Repositories
+:toc:
+:toclevels: 2
+
+Stand: 16.07.2026
+
+== Entscheidung
+
+Zwei Repositories, klare Zustaendigkeiten:
+
+* *`spiloconverter`* — Java-Tool `spilo2cnpg` (Code, Tests, CLI-Referenz)
+* *`cloud-native-postgres-operator`* — CNPG-Migrationsprojekt (Projektplan, Runbooks, Konzepte, Publish)
+
+== Was liegt wo
+
+[cols="2,3,1"]
+|===
+| Thema | Fuehrendes Repo / Pfad | Andere Repos
+
+| Tool `spilo2cnpg` (Code) | `spiloconverter` *hier* | —
+| CLI-Referenz `spilo2cnpg` | `docs/spilo2cnpg.adoc` *hier* | Spiegel in `cloud-native-postgres-operator/documentation/tooling/`
+| Projektplan, Jira-Abgleich, Migration | `cloud-native-postgres-operator/documentation/migration/` | `spiloconverter/docs/` — Redirect-Stubs
+| Betriebs-Runbook Pilot tifa | `cloud-native-postgres-operator/documentation/betrieb/` | `selfservice-test-apps/.../tifa/` — Manifeste im GitOps-Repo
+| Backup-Konzept, Vergleiche, Labels | `cloud-native-postgres-operator/documentation/konzepte/` | `postgres-documentation/` — Archiv
+| Condor-Referenz-Manifeste | `cloud-native-postgres-operator/documentation/examples/condor/` | `spiloconverter/examples/condor/` — Redirect-Stubs
+| Confluence CNPG-Hub | `cloud-native-postgres-operator` (`scripts/publish_confluence.py`) | —
+|===
+
+== Regeln
+
+. *Tool-Aenderungen* (Java, Tests, `docs/spilo2cnpg.adoc`) in `spiloconverter`.
+. *Projekt-Aenderungen* (Plan, Runbook, Konzepte) in `cloud-native-postgres-operator/documentation/`.
+. *Generator-Output:* ein YAML-Dokument pro Datei (`kind: Cluster` only), kein Multi-Document (`---`), keine `Database`-CRDs.
+. Companion-Ressourcen (`ObjectStore`, `Pooler`, `PodMonitor`, `ScheduledBackup`) tenant-spezifisch ausserhalb des Generators pflegen.
+. Deploy-Manifeste bleiben im jeweiligen GitOps-Repo.
+
+== Schnellstart (Tool)
+
+[source,bash]
+----
+cd spiloconverter
+cat README.adoc
+cat docs/spilo2cnpg.adoc
+mvn -q package -DskipTests
+java -jar target/spiloconverter-*.jar --help
+----
