@@ -175,7 +175,18 @@ class SpiloToCnpgConverterTest {
     assertFalse(role.isCreaterole());
     assertEquals("app.test-cluster.credentials.postgresql.acid.zalan.do",
         role.getPasswordSecret().getName());
-    assertNull(role.getPasswordSecret().getKey());
+    assertEquals("password", role.getPasswordSecret().getKey());
+  }
+
+  @Test
+  void mapsNologinAndNoinheritOptions() {
+    SpiloSpec spec = SpiloTestFixtures.readySpec();
+    spec.setUsersMap(Map.of("batch", List.of("nologin", "noinherit")));
+
+    CnpgCluster cluster = converter.convert(SpiloTestFixtures.crWith(spec), monolith());
+    var role = cluster.getSpec().getManaged().getRoles().get(0);
+    assertFalse(role.isLogin());
+    assertFalse(role.isInherit());
   }
 
   @Test

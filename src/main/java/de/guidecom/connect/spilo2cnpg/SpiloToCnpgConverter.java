@@ -550,6 +550,10 @@ public class SpiloToCnpgConverter {
         .build();
   }
 
+  private static boolean hasUserOption(List<String> opts, String option) {
+    return opts.stream().anyMatch(o -> option.equalsIgnoreCase(o));
+  }
+
   private ManagedConfig buildManagedRoles(SpiloSpec spec, String sourceClusterName, ConversionOptions options) {
     if (spec.getUsers() == null || spec.getUsers().isEmpty()) {
       return null;
@@ -560,14 +564,15 @@ public class SpiloToCnpgConverter {
           List<String> opts = user.getOptions() != null ? user.getOptions() : List.of();
           return RoleConfig.builder()
               .name(user.getName())
-              .login(true)
-              .superuser(options.isEnableSuperuserAccess() && opts.contains("superuser"))
-              .createdb(opts.contains("createdb"))
-              .createrole(opts.contains("createrole"))
-              .inherit(true)
-              .replication(opts.contains("replication"))
+              .login(!hasUserOption(opts, "nologin"))
+              .superuser(options.isEnableSuperuserAccess() && hasUserOption(opts, "superuser"))
+              .createdb(hasUserOption(opts, "createdb"))
+              .createrole(hasUserOption(opts, "createrole"))
+              .inherit(!hasUserOption(opts, "noinherit"))
+              .replication(hasUserOption(opts, "replication"))
               .passwordSecret(SecretKeyRef.builder()
                   .name(zalandoSecretName(user.getName(), sourceClusterName))
+                  .key("password")
                   .build())
               .build();
         })

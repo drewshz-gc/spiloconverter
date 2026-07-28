@@ -80,6 +80,27 @@ class SpiloAnalyzerTest {
   }
 
   @Test
+  void envEntryWithoutNameDoesNotCrash() {
+    SpiloSpec spec = SpiloTestFixtures.readySpec();
+    spec.setEnv(List.of(SpiloEnvVar.builder().value("orphan").build()));
+
+    AnalysisResult result = analyzer.analyze(SpiloTestFixtures.crWith(spec));
+
+    assertEquals(MigrationReadiness.READY_WITH_WARNINGS, result.getReadiness());
+  }
+
+  @Test
+  void zeroNumberOfInstancesIsBlocker() {
+    SpiloSpec spec = SpiloTestFixtures.readySpec();
+    spec.setNumberOfInstances(0);
+
+    AnalysisResult result = analyzer.analyze(SpiloTestFixtures.crWith(spec));
+
+    assertEquals(MigrationReadiness.BLOCKED, result.getReadiness());
+    assertTrue(hasFinding(result, Category.CONFIGURATION, Severity.BLOCKER));
+  }
+
+  @Test
   void walgEnvIsDetectedAsBackupInfo() {
     AnalysisResult result = analyzer.analyze(SpiloTestFixtures.readyCr());
 

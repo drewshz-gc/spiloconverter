@@ -53,6 +53,7 @@ public class SpiloAnalyzer {
     SpiloSpec spec = spilo.getSpec();
 
     checkPostgresVersion(spec, findings);
+    checkNumberOfInstances(spec, findings);
     checkPatroniConfiguration(spec, findings);
     checkBackupConfiguration(spec, findings);
     checkTlsConfiguration(spec, findings);
@@ -79,6 +80,20 @@ public class SpiloAnalyzer {
         .readiness(readiness)
         .findings(findings)
         .build();
+  }
+
+
+  private void checkNumberOfInstances(SpiloSpec spec, List<AnalysisFinding> findings) {
+    if (spec.getNumberOfInstances() >= 1) {
+      return;
+    }
+    findings.add(AnalysisFinding.builder()
+        .severity(Severity.BLOCKER)
+        .category(Category.CONFIGURATION)
+        .title("Invalid numberOfInstances: " + spec.getNumberOfInstances())
+        .detail("spec.numberOfInstances must be at least 1 for a valid CNPG Cluster")
+        .recommendation("Set spec.numberOfInstances to the desired HA instance count (>= 1)")
+        .build());
   }
 
   private void checkPostgresVersion(SpiloSpec spec, List<AnalysisFinding> findings) {
@@ -253,13 +268,14 @@ public class SpiloAnalyzer {
     }
 
     spec.getEnv().forEach(env -> {
-      if (UNSUPPORTED_SPILO_ENV_VARS.contains(env.getName())) {
+      String envName = env.getName();
+      if (envName != null && UNSUPPORTED_SPILO_ENV_VARS.contains(envName)) {
         findings.add(AnalysisFinding.builder()
             .severity(Severity.BLOCKER)
             .category(Category.ENV_VARS)
-            .title("Unsupported Spilo env var: " + env.getName())
+            .title("Unsupported Spilo env var: " + envName)
             .detail("This variable controls Spilo-specific behavior with no CNPG equivalent")
-            .recommendation("Review the functionality controlled by " + env.getName()
+            .recommendation("Review the functionality controlled by " + envName
                 + " and configure the equivalent in CNPG spec before migrating")
             .build());
       }
